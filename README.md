@@ -29,6 +29,7 @@
 | **Debug Log Capture: Stop MCP Server** | Stops the above |
 | **Debug Log Capture: Configure Claude Code MCP** | Adds a `debug-logs` server entry to `<workspace>/.mcp.json` |
 | **Debug Log Capture: Configure GitHub Copilot MCP** | Adds a `debug-logs` server entry to `<workspace>/.vscode/mcp.json` |
+| **Debug Log Capture: Check Launch Configuration** | Analyzes the workspace's `launch.json` and opens a report showing which configurations will produce full, partial, or empty log capture — plus recommended fixes |
 
 ## AI integration
 
@@ -52,6 +53,42 @@ Once configured, natural-language prompts that work well:
 
 The MCP server also exposes a `debug://logs/summary` resource that clients can subscribe to — the server sends `notifications/resources/updated` events whenever the log directory changes, so your assistant can be aware of live log updates without polling.
 
+## Recommended launch configuration
+
+How much output reaches the log file depends on two things: the debugger being used and the `"console"` setting in your `launch.json`.
+
+| `"console"` value | Python (debugpy) | Node.js / Go / other debuggers |
+|---|---|---|
+| `"internalConsole"` | ✅ Full capture | ✅ Full capture |
+| `"integratedTerminal"` | ⚠️ Partial — debugpy's Python-level output hooks forward most output through DAP, but a few early lines from the parent process (pre-hook) may be missing. ANSI color escape sequences are preserved verbatim. | ❌ Empty — output bypasses DAP entirely |
+| `"externalTerminal"` | ❌ Empty — output bypasses DAP | ❌ Empty — output bypasses DAP |
+
+**Recommendation**: set `"console": "internalConsole"` for the most reliable, tool-agnostic capture. The output lands in VS Code's Debug Console panel instead of a terminal; for server workloads (uvicorn, TaskIQ, etc.) that's usually fine — you rarely need an interactive TTY for the process you're debugging.
+
+### Example: uvicorn + FastAPI with reload
+
+```json
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "API: debug",
+      "type": "debugpy",
+      "request": "launch",
+      "module": "uvicorn",
+      "console": "internalConsole",
+      "cwd": "${workspaceFolder}",
+      "args": ["main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"],
+      "justMyCode": false
+    }
+  ]
+}
+```
+
+This captures the uvicorn startup banner, request logs, your application's `logging` output, and exception tracebacks into one log file per launch. The reload worker is a separate debugpy subprocess — its output is automatically merged into the parent's log with `── Subprocess attached ──` markers.
+
+> **Tested so far**: Python / debugpy. Other debugger types (Node.js, Go, Java, etc.) should also work given DAP is a standard protocol — please [open an issue](https://github.com/sebaespinosa/vscode_debug_logs_to_file_extension/issues) if you find one that doesn't.
+
 ## Settings
 
 | Setting | Default | Description |
@@ -65,7 +102,8 @@ The MCP server also exposes a `debug://logs/summary` resource that clients can s
 
 ## Known limitations
 
-- **`"console": "integratedTerminal"` bypasses capture.** When a launch config directs process output to the integrated terminal, the output does not flow through the Debug Adapter Protocol and therefore cannot be intercepted by this extension. The extension raises a one-time warning when such a session starts. Workaround: switch to `"console": "internalConsole"` to get full capture, or use `debugpy`'s `logToFile` if you need both the terminal view and the log file.
+- **`"console": "integratedTerminal"` and `"externalTerminal"` partially or fully bypass capture** — see [Recommended launch configuration](#recommended-launch-configuration) above for a per-debugger breakdown. The extension raises a one-time warning when such a session starts so you don't silently end up with an empty or incomplete log file.
+- **ANSI escape sequences in captured output are preserved verbatim** — rendered colors appear as `[32m…[0m` markers in the file. This is mostly cosmetic and AI assistants can still parse the content, but log viewers won't display colored output.
 - **MCP server is stdio-only.** HTTP/SSE transport is not implemented; the `debugLogCapture.mcpServer.port` setting is reserved for a future version.
 
 ## Requirements

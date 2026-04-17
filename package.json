@@ -66,6 +66,10 @@
       {
         "command": "debugLogCapture.configureCopilotMcp",
         "title": "Debug Log Capture: Configure GitHub Copilot MCP"
+      },
+      {
+        "command": "debugLogCapture.checkLaunchConfig",
+        "title": "Debug Log Capture: Check Launch Configuration"
       }
     ],
     "configuration": {

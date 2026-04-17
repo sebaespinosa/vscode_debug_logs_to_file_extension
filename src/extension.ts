@@ -126,6 +126,12 @@ export function activate(context: vscode.ExtensionContext) {
     })
   );
 
+  context.subscriptions.push(
+    vscode.commands.registerCommand("debugLogCapture.checkLaunchConfig", () => {
+      checkLaunchConfig();
+    })
+  );
+
   // ── Auto-start MCP server if configured ───────────────────────────
 
   const config = vscode.workspace.getConfiguration("debugLogCapture");
@@ -316,6 +322,158 @@ function configureCopilotMcp(context: vscode.ExtensionContext): Promise<void> {
       args: [serverScript, "--workspace", workspaceRoot],
     }),
   });
+}
+
+// ── Launch configuration validator ─────────────────────────────────
+
+type CaptureVerdict =
+  | { severity: "ok"; summary: string; detail: string }
+  | { severity: "warn"; summary: string; detail: string; recommendation: string }
+  | { severity: "bad"; summary: string; detail: string; recommendation: string };
+
+function verdictForConfig(cfg: Record<string, unknown>): CaptureVerdict {
+  const consoleSetting = cfg.console as string | undefined;
+  const type = (cfg.type as string | undefined) ?? "unknown";
+  const isPython = type === "debugpy" || type === "python";
+
+  if (consoleSetting === "internalConsole") {
+    return {
+      severity: "ok",
+      summary: "Full capture expected",
+      detail: `Output flows through DAP to the extension.`,
+    };
+  }
+  if (consoleSetting === "externalTerminal") {
+    return {
+      severity: "bad",
+      summary: "No capture expected",
+      detail: `"externalTerminal" opens a separate OS terminal; output bypasses DAP entirely.`,
+      recommendation: `Change "console" to "internalConsole".`,
+    };
+  }
+  if (consoleSetting === "integratedTerminal") {
+    if (isPython) {
+      return {
+        severity: "warn",
+        summary: "Partial capture expected",
+        detail: `debugpy's Python-level output redirection forwards most stdout/stderr through DAP, but a few early lines from the parent process (printed before the hooks install) may be missing. ANSI escape sequences are preserved verbatim.`,
+        recommendation: `For full capture, change "console" to "internalConsole".`,
+      };
+    }
+    return {
+      severity: "bad",
+      summary: "No capture expected",
+      detail: `"integratedTerminal" routes output directly to a terminal PTY. For non-Python debuggers this bypasses DAP entirely.`,
+      recommendation: `Change "console" to "internalConsole".`,
+    };
+  }
+  // console not specified
+  return {
+    severity: "warn",
+    summary: "Console not specified",
+    detail: `The debugger (${type}) will use its default console behavior, which varies. For reliable capture, set this explicitly.`,
+    recommendation: `Add "console": "internalConsole" to this configuration.`,
+  };
+}
+
+function iconFor(severity: CaptureVerdict["severity"]): string {
+  return severity === "ok" ? "✅" : severity === "warn" ? "⚠️" : "❌";
+}
+
+async function checkLaunchConfig(): Promise<void> {
+  const folder = vscode.workspace.workspaceFolders?.[0];
+  if (!folder) {
+    vscode.window.showErrorMessage("No workspace folder open.");
+    return;
+  }
+
+  const launchConfig = vscode.workspace.getConfiguration("launch", folder.uri);
+  const configurations =
+    (launchConfig.get<Record<string, unknown>[]>("configurations") ?? []).filter(
+      (c) => c && typeof c === "object"
+    );
+  const compounds =
+    (launchConfig.get<Record<string, unknown>[]>("compounds") ?? []).filter(
+      (c) => c && typeof c === "object"
+    );
+
+  if (configurations.length === 0 && compounds.length === 0) {
+    vscode.window.showInformationMessage(
+      "No launch configurations found in this workspace. Create a .vscode/launch.json to get started."
+    );
+    return;
+  }
+
+  const verdicts = configurations.map((cfg) => ({ cfg, verdict: verdictForConfig(cfg) }));
+  const counts = {
+    ok: verdicts.filter((v) => v.verdict.severity === "ok").length,
+    warn: verdicts.filter((v) => v.verdict.severity === "warn").length,
+    bad: verdicts.filter((v) => v.verdict.severity === "bad").length,
+  };
+
+  const lines: string[] = [];
+  lines.push(`# Launch Configuration Check`);
+  lines.push("");
+  lines.push(`**Workspace**: \`${folder.uri.fsPath}\``);
+  lines.push("");
+  lines.push(
+    `**Summary**: ${verdicts.length} configuration(s) checked — ${counts.ok} optimal, ${counts.warn} warning, ${counts.bad} likely broken.`
+  );
+  lines.push("");
+  lines.push(`---`);
+  lines.push("");
+
+  for (const { cfg, verdict } of verdicts) {
+    const name = (cfg.name as string | undefined) ?? "(unnamed)";
+    const type = (cfg.type as string | undefined) ?? "unknown";
+    const request = (cfg.request as string | undefined) ?? "unknown";
+    const consoleSetting = (cfg.console as string | undefined) ?? "(not set)";
+
+    lines.push(`## ${iconFor(verdict.severity)} ${name}`);
+    lines.push("");
+    lines.push(`- **Type**: \`${type}\``);
+    lines.push(`- **Request**: \`${request}\``);
+    lines.push(`- **Console**: \`${consoleSetting}\``);
+    lines.push(`- **Status**: ${verdict.summary}`);
+    lines.push(`- **Detail**: ${verdict.detail}`);
+    if (verdict.severity !== "ok") {
+      lines.push(`- **Recommendation**: ${verdict.recommendation}`);
+    }
+    lines.push("");
+  }
+
+  if (compounds.length > 0) {
+    lines.push(`---`);
+    lines.push("");
+    lines.push(`## Compound configurations`);
+    lines.push("");
+    const verdictByName = new Map(
+      verdicts.map((v) => [v.cfg.name as string, v.verdict])
+    );
+    for (const compound of compounds) {
+      const cname = (compound.name as string | undefined) ?? "(unnamed)";
+      const refs = (compound.configurations as string[] | undefined) ?? [];
+      lines.push(`- **${cname}** references:`);
+      for (const ref of refs) {
+        const v = verdictByName.get(ref);
+        const icon = v ? iconFor(v.severity) : "❓";
+        lines.push(`  - ${icon} \`${ref}\`${v ? ` — ${v.summary}` : " — not found in configurations"}`);
+      }
+      lines.push("");
+    }
+  }
+
+  lines.push(`---`);
+  lines.push("");
+  lines.push(
+    `See the [README](https://github.com/sebaespinosa/vscode_debug_logs_to_file_extension#recommended-launch-configuration) for the full capture matrix and example configs.`
+  );
+
+  const doc = await vscode.workspace.openTextDocument({
+    language: "markdown",
+    content: lines.join("\n"),
+  });
+  await vscode.window.showTextDocument(doc, { preview: true });
 }
 
 function stopMcpServer() {

@@ -1,0 +1,136 @@
+{
+  "name": "debug-log-capture",
+  "displayName": "Debug Log Capture",
+  "description": "Captures debug console output to log files and exposes them via MCP for AI assistants like Claude Code.",
+  "version": "0.1.0",
+  "publisher": "sebaespinosa",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sebaespinosa/vscode_debug_logs_to_file_extension.git"
+  },
+  "bugs": {
+    "url": "https://github.com/sebaespinosa/vscode_debug_logs_to_file_extension/issues"
+  },
+  "homepage": "https://github.com/sebaespinosa/vscode_debug_logs_to_file_extension#readme",
+  "icon": "icon.png",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Debuggers",
+    "AI",
+    "Other"
+  ],
+  "keywords": [
+    "debug",
+    "debugger",
+    "log",
+    "logs",
+    "logging",
+    "debug-logs",
+    "mcp",
+    "model-context-protocol",
+    "claude",
+    "claude-code",
+    "copilot",
+    "ai"
+  ],
+  "preview": true,
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "debugLogCapture.openLog",
+        "title": "Debug Log Capture: Open Current Log"
+      },
+      {
+        "command": "debugLogCapture.cleanLogs",
+        "title": "Debug Log Capture: Clean All Logs"
+      },
+      {
+        "command": "debugLogCapture.startMcpServer",
+        "title": "Debug Log Capture: Start MCP Server"
+      },
+      {
+        "command": "debugLogCapture.stopMcpServer",
+        "title": "Debug Log Capture: Stop MCP Server"
+      },
+      {
+        "command": "debugLogCapture.configureClaudeCode",
+        "title": "Debug Log Capture: Configure Claude Code MCP"
+      },
+      {
+        "command": "debugLogCapture.configureCopilotMcp",
+        "title": "Debug Log Capture: Configure GitHub Copilot MCP"
+      }
+    ],
+    "configuration": {
+      "title": "Debug Log Capture",
+      "properties": {
+        "debugLogCapture.logDirectory": {
+          "type": "string",
+          "default": "debug-logs",
+          "description": "Directory (relative to workspace root) where debug log files are stored."
+        },
+        "debugLogCapture.cleanOnStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Delete previous log files when a new debug session starts."
+        },
+        "debugLogCapture.maxLogSizeMB": {
+          "type": "number",
+          "default": 10,
+          "description": "Maximum log file size in MB. Older lines are trimmed when exceeded."
+        },
+        "debugLogCapture.mcpServer.autoStart": {
+          "type": "boolean",
+          "default": false,
+          "description": "Automatically start the MCP server when the extension activates."
+        },
+        "debugLogCapture.mcpServer.port": {
+          "type": "number",
+          "default": 8089,
+          "description": "Port for the MCP SSE server."
+        },
+        "debugLogCapture.includeTimestamps": {
+          "type": "boolean",
+          "default": true,
+          "description": "Prefix each log line with a timestamp."
+        },
+        "debugLogCapture.excludeCategories": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "telemetry"
+          ],
+          "description": "DAP output categories to suppress from log files. Possible values: stdout, stderr, console, important, telemetry."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build -- --production",
+    "compile": "npm run typecheck && npm run build",
+    "build": "node ./scripts/esbuild.js",
+    "watch": "node ./scripts/esbuild.js --watch",
+    "typecheck": "tsc -p ./ --noEmit",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@types/vscode": "^1.85.0",
+    "esbuild": "^0.28.0",
+    "eslint": "^8.56.0",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.1",
+    "zod": "^3.23.0"
+  }
+}

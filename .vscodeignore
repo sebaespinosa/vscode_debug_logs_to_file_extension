@@ -1,0 +1,29 @@
+# TypeScript source (only bundled out/ ships)
+src/**
+**/*.ts
+**/*.map
+
+# Dependencies — all runtime deps are bundled into out/ via esbuild
+node_modules/**
+
+# Build config & scripts
+tsconfig.json
+scripts/**
+.eslintrc*
+.prettierrc*
+
+# Dev / local
+.vscode/**
+.vscode-test/**
+.github/**
+.gitignore
+.vscodeignore
+.git/**
+.DS_Store
+
+# Previous packages
+*.vsix
+*.tsbuildinfo
+
+# Internal docs (not intended for end users)
+handoff.md

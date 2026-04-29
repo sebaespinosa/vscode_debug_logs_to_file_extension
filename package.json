@@ -2,7 +2,7 @@
   "name": "debug-log-capture",
   "displayName": "Debug Log Capture",
   "description": "Captures debug console output to log files and exposes them via MCP for AI assistants like Claude Code.",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "publisher": "sebaespinosa",
   "license": "MIT",
   "repository": {

@@ -16,6 +16,11 @@ Initial preview release.
   - **Debug Log Capture: Configure Claude Code MCP** — writes `<workspace>/.mcp.json`.
   - **Debug Log Capture: Configure GitHub Copilot MCP** — writes `<workspace>/.vscode/mcp.json`.
   Both use the extension's own install path so the config is always correct for the current machine/profile.
-- Warning notification when a debug session uses `"console": "integratedTerminal"`, since direct terminal output bypasses the Debug Adapter Protocol and cannot be captured. The warning is deduplicated per launch-configuration name and suppressed for debugpy subprocess sessions.
+- **Debug Log Capture: Check Launch Configuration** — reads the workspace's `launch.json` and opens a Markdown report rating each configuration (full / partial / empty capture) with specific recommendations. Knows both generic (`internalConsole`/`integratedTerminal`) and Dart-Code (`debugConsole`/`terminal`) vocabulary.
+- Warning notification when a debug session uses a console setting that may bypass DAP (`integratedTerminal`, Dart's `terminal`, or `externalTerminal`). The warning is deduplicated per launch-configuration name and suppressed for subprocess sessions.
 - Configurable DAP category exclusion via `debugLogCapture.excludeCategories` (defaults to `["telemetry"]`).
 - Settings: `logDirectory`, `cleanOnStart`, `maxLogSizeMB`, `includeTimestamps`, `excludeCategories`, `mcpServer.autoStart`.
+
+### Verified debugger types
+- Python (`debugpy`) — full capture with `internalConsole`, partial with `integratedTerminal`.
+- Dart/Flutter (`dart`/`flutter`) — full capture with default settings or `debugConsole`. `flutterMode: release` disables Dart VM debugging so capture is build/launch only.

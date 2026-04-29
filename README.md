@@ -57,13 +57,18 @@ The MCP server also exposes a `debug://logs/summary` resource that clients can s
 
 How much output reaches the log file depends on two things: the debugger being used and the `"console"` setting in your `launch.json`.
 
-| `"console"` value | Python (debugpy) | Node.js / Go / other debuggers |
-|---|---|---|
-| `"internalConsole"` | ✅ Full capture | ✅ Full capture |
-| `"integratedTerminal"` | ⚠️ Partial — debugpy's Python-level output hooks forward most output through DAP, but a few early lines from the parent process (pre-hook) may be missing. ANSI color escape sequences are preserved verbatim. | ❌ Empty — output bypasses DAP entirely |
-| `"externalTerminal"` | ❌ Empty — output bypasses DAP | ❌ Empty — output bypasses DAP |
+| `"console"` value | Python (debugpy) | Dart / Flutter (Dart-Code) | Node.js / Go / other debuggers |
+|---|---|---|---|
+| `"internalConsole"` (Dart: `"debugConsole"`) | ✅ Full capture | ✅ Full capture | ✅ Full capture |
+| `"integratedTerminal"` (Dart: `"terminal"`) | ⚠️ Partial — debugpy's Python-level hooks forward most output through DAP, but a few early lines from the parent process may be missing. ANSI color sequences are preserved verbatim. | ⚠️ Partial — the Dart adapter emits structured DAP output events (stack traces, hot-reload notifications) but application `print()` output may not reach DAP. | ❌ Empty — output bypasses DAP entirely |
+| `"externalTerminal"` | ❌ Empty | ❌ Empty | ❌ Empty |
+| Not specified | ⚠️ Default varies by debugger | ✅ Defaults to `debugConsole` (full capture) for `request: launch` | ⚠️ Default varies by debugger |
 
-**Recommendation**: set `"console": "internalConsole"` for the most reliable, tool-agnostic capture. The output lands in VS Code's Debug Console panel instead of a terminal; for server workloads (uvicorn, TaskIQ, etc.) that's usually fine — you rarely need an interactive TTY for the process you're debugging.
+**Recommendation**: set `"console": "internalConsole"` (or `"debugConsole"` for Dart/Flutter) for the most reliable capture. The output lands in VS Code's Debug Console panel instead of a terminal; for server workloads (uvicorn, TaskIQ, etc.) and most Flutter use cases that's usually fine — you rarely need an interactive TTY for the process you're debugging.
+
+> **Note on Dart-Code vocabulary**: Dart-Code uses `"debugConsole"` / `"terminal"` instead of the generic `"internalConsole"` / `"integratedTerminal"`. The extension's **Check Launch Configuration** command knows the difference and produces accurate verdicts for both vocabularies.
+
+> **Note on Flutter release mode**: `"flutterMode": "release"` disables Dart VM debugging entirely. The launch will succeed and some build/launch output will be captured via DAP, but runtime debug instrumentation is unavailable regardless of console setting.
 
 ### Example: uvicorn + FastAPI with reload
 
@@ -87,7 +92,7 @@ How much output reaches the log file depends on two things: the debugger being u
 
 This captures the uvicorn startup banner, request logs, your application's `logging` output, and exception tracebacks into one log file per launch. The reload worker is a separate debugpy subprocess — its output is automatically merged into the parent's log with `── Subprocess attached ──` markers.
 
-> **Tested so far**: Python / debugpy. Other debugger types (Node.js, Go, Java, etc.) should also work given DAP is a standard protocol — please [open an issue](https://github.com/sebaespinosa/vscode_debug_logs_to_file_extension/issues) if you find one that doesn't.
+> **Tested so far**: Python (debugpy), Dart/Flutter (Dart-Code). Other debugger types (Node.js, Go, Java, etc.) should also work given DAP is a standard protocol — please [open an issue](https://github.com/sebaespinosa/vscode_debug_logs_to_file_extension/issues) if you find one that doesn't.
 
 ## Settings
 

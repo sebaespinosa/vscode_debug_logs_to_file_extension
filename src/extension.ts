@@ -35,18 +35,23 @@ export function activate(context: vscode.ExtensionContext) {
         outputChannel.appendLine(`Failed to start logging: ${err}`);
       }
 
+      // Console values that route output to a PTY rather than through DAP. Dart-Code
+      // uses "terminal" instead of "integratedTerminal", so accept both.
+      const ptyConsoles = new Set(["integratedTerminal", "terminal", "externalTerminal"]);
+      const consoleSetting = session.configuration?.console as string | undefined;
       if (
-        session.configuration?.console === "integratedTerminal" &&
+        consoleSetting &&
+        ptyConsoles.has(consoleSetting) &&
         !session.parentSession
       ) {
         const configName = session.configuration.name ?? session.name;
         if (!warnedIntegratedTerminalConfigs.has(configName)) {
           warnedIntegratedTerminalConfigs.add(configName);
           outputChannel.appendLine(
-            `[Warning] Session "${session.name}" uses integratedTerminal — direct process stdout/stderr won't be captured by DAP. Only debugger console output will be logged.`
+            `[Warning] Session "${session.name}" uses console="${consoleSetting}" — direct process stdout/stderr may bypass DAP and not be captured.`
           );
           vscode.window.showWarningMessage(
-            `Debug Log Capture: "${session.name}" uses integratedTerminal. Process output bypasses DAP and won't be captured.`
+            `Debug Log Capture: "${session.name}" uses console="${consoleSetting}". Process output may bypass DAP and not be fully captured.`
           );
         }
       }
@@ -332,23 +337,53 @@ type CaptureVerdict =
   | { severity: "bad"; summary: string; detail: string; recommendation: string };
 
 function verdictForConfig(cfg: Record<string, unknown>): CaptureVerdict {
-  const consoleSetting = cfg.console as string | undefined;
+  const rawConsole = cfg.console as string | undefined;
   const type = (cfg.type as string | undefined) ?? "unknown";
+  const request = (cfg.request as string | undefined) ?? "unknown";
+  const flutterMode = cfg.flutterMode as string | undefined;
   const isPython = type === "debugpy" || type === "python";
+  const isDart = type === "dart" || type === "flutter";
+
+  // Dart-Code uses different vocabulary than the rest of the ecosystem. Normalize
+  // here so the verdict tree below stays simple.
+  let consoleSetting = rawConsole;
+  if (isDart) {
+    if (rawConsole === "debugConsole") {
+      consoleSetting = "internalConsole";
+    } else if (rawConsole === "terminal") {
+      consoleSetting = "integratedTerminal";
+    }
+    // Default for Dart `request: launch` is `debugConsole` (= internalConsole).
+    if (rawConsole === undefined && request === "launch") {
+      consoleSetting = "internalConsole";
+    }
+  }
+
+  // Flutter release mode strips VM debugging — useful capture is limited even with
+  // debugConsole. Append this caveat to the relevant verdict's detail.
+  const flutterReleaseCaveat =
+    isDart && flutterMode === "release"
+      ? ` Note: flutterMode="release" disables Dart VM debugging, so the captured content will be limited to build/launch output regardless of console setting.`
+      : "";
 
   if (consoleSetting === "internalConsole") {
     return {
       severity: "ok",
-      summary: "Full capture expected",
-      detail: `Output flows through DAP to the extension.`,
+      summary:
+        flutterMode === "release"
+          ? "Full capture available, but limited by release mode"
+          : "Full capture expected",
+      detail: `Output flows through DAP to the extension.${flutterReleaseCaveat}`,
     };
   }
   if (consoleSetting === "externalTerminal") {
     return {
       severity: "bad",
       summary: "No capture expected",
-      detail: `"externalTerminal" opens a separate OS terminal; output bypasses DAP entirely.`,
-      recommendation: `Change "console" to "internalConsole".`,
+      detail: `"externalTerminal" opens a separate OS terminal; output bypasses DAP entirely.${flutterReleaseCaveat}`,
+      recommendation: isDart
+        ? `Change "console" to "debugConsole" (or omit the field — that's the default for Dart launch configs).`
+        : `Change "console" to "internalConsole".`,
     };
   }
   if (consoleSetting === "integratedTerminal") {
@@ -360,14 +395,23 @@ function verdictForConfig(cfg: Record<string, unknown>): CaptureVerdict {
         recommendation: `For full capture, change "console" to "internalConsole".`,
       };
     }
+    if (isDart) {
+      return {
+        severity: "warn",
+        summary: "Partial capture expected",
+        detail: `"terminal" routes the app's stdout/stderr through a PTY. The Dart-Code adapter still emits structured DAP output events (stack traces, hot-reload notifications), but application print() output may not reach DAP.${flutterReleaseCaveat}`,
+        recommendation: `For full capture, change "console" to "debugConsole" (or omit the field — that's the default for Dart launch configs).`,
+      };
+    }
     return {
       severity: "bad",
       summary: "No capture expected",
-      detail: `"integratedTerminal" routes output directly to a terminal PTY. For non-Python debuggers this bypasses DAP entirely.`,
+      detail: `"integratedTerminal" routes output directly to a terminal PTY. For non-Python, non-Dart debuggers this bypasses DAP entirely.`,
       recommendation: `Change "console" to "internalConsole".`,
     };
   }
-  // console not specified
+  // console not specified — only reached for non-Dart debuggers (Dart's default
+  // was already normalized above).
   return {
     severity: "warn",
     summary: "Console not specified",
